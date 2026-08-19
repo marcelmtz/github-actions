@@ -1,0 +1,48 @@
+# Throwaway harness: verifies that Mage-OS lanes work on mariadb:11.4 after the
+# healthcheck fix, i.e. that the mysql:8.4 override from #377 can be dropped.
+# This repo's own CI only ever builds the magento-open-source matrix, so nothing
+# here otherwise exercises a Mage-OS lane. Delete this file once #378 is settled.
+name: "[test] Mage-OS MariaDB verification"
+
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "supported-version kind (nightly = what Mage-OS Nightly uses; currently-supported = every live 3.x)"
+        required: false
+        default: nightly
+        type: string
+      magento_repository:
+        description: "Composer repository to install from"
+        required: false
+        default: https://nightly.mage-os.org
+        type: string
+
+jobs:
+  compute-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.supported-version.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      # local action, so this resolves against THIS branch rather than @main
+      - uses: ./supported-version
+        with:
+          kind: ${{ inputs.kind }}
+          project: mage-os
+        id: supported-version
+      - name: Show resolved database service
+        run: echo '${{ steps.supported-version.outputs.matrix }}' | tr ',' '\n' | grep -iE '"(mysql|mariadb)"|health-cmd' || true
+
+  integration-check:
+    needs: [compute-matrix]
+    # local reusable workflow, so this also comes from THIS branch
+    uses: ./.github/workflows/integration.yaml
+    with:
+      package_name: mage-os/demo-package
+      use_local_source: false
+      matrix: ${{ needs.compute-matrix.outputs.matrix }}
+      test_command: ../../../vendor/bin/phpunit ../../../vendor/mage-os/demo-package/Test/Integration
+      fail-fast: false
+      magento_repository: ${{ inputs.magento_repository }}
+      composer_cache_key: 'v1'
