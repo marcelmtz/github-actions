@@ -1,52 +1,70 @@
-# Throwaway harness: verifies that Mage-OS lanes work on mariadb:11.4 after the
+# Throwaway harness: verifies Mage-OS lanes work on mariadb:11.4 after the
 # healthcheck fix, i.e. that the mysql:8.4 override from #377 can be dropped.
-# This repo's own CI only ever builds the magento-open-source matrix, so nothing
-# here otherwise exercises a Mage-OS lane. Delete this file once #378 is settled.
+# This repo's own CI only builds the magento-open-source matrix, so nothing here
+# otherwise exercises a Mage-OS lane. Delete once #378 is settled.
+#
+# Two lanes, because the pinned releases and the rolling alpha live in different
+# composer repositories:
+#   nightly  -> kind=nightly              @alpha  from nightly.mage-os.org
+#   release  -> kind=currently-supported  3.4.0   from repo.mage-os.org   <- what #378 is about
 name: "[test] Mage-OS MariaDB verification"
 
 on:
-  # push trigger so it runs on this branch without needing the file on the default branch
   push:
     branches:
       - test/mageos-mariadb-verify
   workflow_dispatch:
-    inputs:
-      kind:
-        description: "supported-version kind (nightly = what Mage-OS Nightly uses; currently-supported = every live 3.x)"
-        required: false
-        default: nightly
-        type: string
-      magento_repository:
-        description: "Composer repository to install from"
-        required: false
-        default: https://nightly.mage-os.org
-        type: string
 
 jobs:
-  compute-matrix:
+  # ---------- nightly lane ----------
+  matrix-nightly:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.supported-version.outputs.matrix }}
+      matrix: ${{ steps.sv.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-      # local action, so this resolves against THIS branch rather than @main
-      - uses: ./supported-version
+      - uses: ./supported-version        # local => this branch, not @main
+        id: sv
         with:
-          kind: ${{ inputs.kind || 'nightly' }}
+          kind: nightly
           project: mage-os
-        id: supported-version
-      - name: Show resolved database service
-        run: echo '${{ steps.supported-version.outputs.matrix }}' | tr ',' '\n' | grep -iE '"(mysql|mariadb)"|health-cmd' || true
+      - run: echo '${{ steps.sv.outputs.matrix }}' | tr ',' '\n' | grep -iE '"(mysql|mariadb)"|health-cmd' || true
 
-  integration-check:
-    needs: [compute-matrix]
-    # local reusable workflow, so this also comes from THIS branch
+  nightly:
+    needs: [matrix-nightly]
     uses: ./.github/workflows/integration.yaml
     with:
       package_name: mage-os/demo-package
       use_local_source: false
-      matrix: ${{ needs.compute-matrix.outputs.matrix }}
+      matrix: ${{ needs.matrix-nightly.outputs.matrix }}
       test_command: ../../../vendor/bin/phpunit ../../../vendor/mage-os/demo-package/Test/Integration
       fail-fast: false
-      magento_repository: ${{ inputs.magento_repository || 'https://nightly.mage-os.org' }}
+      magento_repository: https://nightly.mage-os.org
+      composer_cache_key: 'v1'
+
+  # ---------- release lane ----------
+  matrix-release:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.sv.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./supported-version
+        id: sv
+        with:
+          kind: currently-supported
+          project: mage-os
+      - run: echo '${{ steps.sv.outputs.matrix }}' | tr ',' '\n' | grep -iE '"(mysql|mariadb)"|health-cmd' || true
+
+  release:
+    needs: [matrix-release]
+    uses: ./.github/workflows/integration.yaml
+    with:
+      package_name: mage-os/demo-package
+      use_local_source: false
+      matrix: ${{ needs.matrix-release.outputs.matrix }}
+      test_command: ../../../vendor/bin/phpunit ../../../vendor/mage-os/demo-package/Test/Integration
+      fail-fast: false
+      # pinned releases live here; nightly.mage-os.org only carries the rolling alpha
+      magento_repository: https://repo.mage-os.org
       composer_cache_key: 'v1'
