@@ -32,7 +32,7 @@ jobs:
       # local action, so this resolves against THIS branch rather than @main
       - uses: ./supported-version
         with:
-          kind: ${{ inputs.kind }}
+          kind: ${{ inputs.kind || 'nightly' }}
           project: mage-os
         id: supported-version
       - name: Show resolved database service
@@ -48,5 +48,5 @@ jobs:
       matrix: ${{ needs.compute-matrix.outputs.matrix }}
       test_command: ../../../vendor/bin/phpunit ../../../vendor/mage-os/demo-package/Test/Integration
       fail-fast: false
-      magento_repository: ${{ inputs.magento_repository }}
+      magento_repository: ${{ inputs.magento_repository || 'https://nightly.mage-os.org' }}
       composer_cache_key: 'v1'
