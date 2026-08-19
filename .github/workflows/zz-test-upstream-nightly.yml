@@ -1,0 +1,37 @@
+# Throwaway harness: reproduces generate-mirror-repo-js's Upstream Nightly
+# integration check against this branch, since this repo's own CI only builds
+# released magento-open-source lanes and never the @alpha nightly lane.
+# Delete once the RabbitMQ bump is merged.
+name: "[test] Upstream Nightly verification"
+
+on:
+  push:
+    branches:
+      - test/rabbitmq-4.3-verify
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.sv.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./supported-version          # local => this branch, not @main
+        id: sv
+        with:
+          kind: nightly
+          project: magento-open-source
+      - run: echo '${{ steps.sv.outputs.matrix }}' | tr ',' '\n' | grep -iE '"(magento|rabbitmq|mariadb|mysql)"' || true
+
+  integration:
+    needs: [matrix]
+    uses: ./.github/workflows/integration.yaml
+    with:
+      package_name: mage-os/demo-package
+      use_local_source: false
+      matrix: ${{ needs.matrix.outputs.matrix }}
+      test_command: ../../../vendor/bin/phpunit ../../../vendor/mage-os/demo-package/Test/Integration
+      fail-fast: false
+      magento_repository: https://upstream-nightly.mage-os.org
+      composer_cache_key: 'v1'
