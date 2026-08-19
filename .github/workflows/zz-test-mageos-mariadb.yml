@@ -5,6 +5,10 @@
 name: "[test] Mage-OS MariaDB verification"
 
 on:
+  # push trigger so it runs on this branch without needing the file on the default branch
+  push:
+    branches:
+      - test/mageos-mariadb-verify
   workflow_dispatch:
     inputs:
       kind:
