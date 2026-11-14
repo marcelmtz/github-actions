@@ -1,0 +1,78 @@
+name: Rehearse the E2E gate
+
+# Fork-only, and deliberately not part of PR #396.
+#
+# e2e.yaml is a reusable workflow, and nothing in this repository calls it the
+# way the release pipeline will: _internal-e2e.yaml inlines its own copy of the
+# steps so it can test the actions, and the release job does not exist yet. So
+# the one thing never exercised is the contract itself -- the inputs, the suite
+# checkout, the artifact, the outputs.
+#
+# This caller closes that gap. It runs the gate the way a caller does, against
+# a release that is already published, which means no release has to be faked
+# and no version has to be added to a matrix to get an answer.
+#
+# It triggers on a push to any rehearse/** branch, not only on
+# workflow_dispatch: a dispatchable workflow has to exist on the repository's
+# default branch, and this one is never going there. inputs.* are empty on a
+# push, which is what the fallbacks below are for.
+#
+# To rehearse the *red* -- the half nobody tests, and the only half a gate
+# exists for -- dispatch with a command that breaks the store first:
+#
+#   cd "$GITHUB_WORKSPACE/_ghamagento"
+#     && ../warden/bin/warden env exec -T php-fpm rm -rf pub/static/frontend
+#     && cd - && npx playwright test
+#
+# as one line in test_command. The homepage spec is the one written to catch
+# exactly that, so a green run there would mean the gate is decorative. Check
+# that the report artifact uploaded and that the failure is readable by someone
+# who did not write the spec.
+
+on:
+  workflow_dispatch:
+    inputs:
+      magento_version:
+        description: "The package to install"
+        type: string
+        default: "mage-os/project-community-edition:4.0.0"
+      magento_repository:
+        description: "The composer repository to install it from. Point this at preview-repo.mage-os.org to rehearse against a candidate."
+        type: string
+        default: "https://repo.mage-os.org/"
+      php_version:
+        description: "PHP version"
+        type: string
+        default: "8.4"
+      test_command:
+        description: "How to run the suite, from the suite directory"
+        type: string
+        default: "npx playwright test"
+  push:
+    branches:
+    - "rehearse/**"
+
+# Standing up the whole stack costs a runner for several minutes; a superseded
+# commit is not worth paying for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    # Same repository, same ref: the gate under rehearsal is this branch's
+    # e2e.yaml, not whatever is on main.
+    uses: ./.github/workflows/e2e.yaml
+    with:
+      magento_version: ${{ inputs.magento_version || 'mage-os/project-community-edition:4.0.0' }}
+      magento_repository: ${{ inputs.magento_repository || 'https://repo.mage-os.org/' }}
+      php_version: ${{ inputs.php_version || '8.4' }}
+      test_command: ${{ inputs.test_command || 'npx playwright test' }}
+      # The suite is this branch's too. The input defaults to
+      # mage-os/github-actions@main, and a rehearsal that runs the specs on
+      # main says nothing about the ones being reviewed.
+      suite_repository: ${{ github.repository }}
+      suite_ref: ${{ github.ref_name }}
+      # Named per run, so several rehearsals in a row do not overwrite each
+      # other's evidence.
+      artifact_name: "rehearsal-${{ github.run_id }}"
