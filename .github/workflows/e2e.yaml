@@ -11,6 +11,12 @@ name: E2E Tests
 # integration.yaml and full-integration-tests.yaml do. A relative path in a
 # reusable workflow resolves against the caller's checkout, which is not this
 # repository when the caller is the release pipeline.
+#
+# FORK-ONLY COMMIT: the two action refs below point at this fork's rehearsal
+# branch instead of mage-os/github-actions@main, so a rehearsal exercises the
+# action changes under review rather than the ones already released. Never
+# merge this commit into the PR -- it would silently gate a release on a
+# contributor's fork.
 
 on:
   workflow_call:
@@ -169,7 +175,7 @@ jobs:
         path: suite
 
     - name: Create the Mage-OS project
-      uses: mage-os/github-actions/setup-magento@main
+      uses: marcelmtz/github-actions/setup-magento@rehearse/e2e-gate
       with:
         php-version: ${{ inputs.php_version }}
         tools: "composer:v2"
@@ -180,7 +186,7 @@ jobs:
 
     - name: Serve the store in Warden
       id: warden
-      uses: mage-os/github-actions/warden/setup-environment@main
+      uses: marcelmtz/github-actions/warden/setup-environment@rehearse/e2e-gate
       with:
         base_directory: "./_ghamagento"
         php_version: ${{ inputs.php_version }}
