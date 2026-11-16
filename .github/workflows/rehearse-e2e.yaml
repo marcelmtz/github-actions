@@ -1,0 +1,84 @@
+name: Rehearse the E2E gate
+
+# Fork-only. This file must never be merged into mage-os/github-actions, and
+# it is not part of PR #396.
+#
+# It exists on the default branch for exactly one reason: GitHub only offers
+# the "Run workflow" button for workflows that live on a repository's default
+# branch. A workflow_dispatch block on a side branch is invisible to both the
+# UI and the API, so the copy on rehearse/e2e-gate can only be started by
+# pushing to that branch. This copy is the button.
+#
+# What it rehearses: e2e.yaml is a reusable workflow, and nothing in the
+# upstream repository calls it the way the release pipeline will.
+# _internal-e2e.yaml inlines its own copy of the steps so it can test the
+# actions, and the release job does not exist yet -- so the one thing never
+# exercised is the contract itself: the inputs, the suite checkout, the
+# artifact, the outputs. This closes that gap against an already published
+# release, which means no release has to be faked and no version has to be
+# added to a matrix to get an answer.
+#
+# Everything it calls is pinned to rehearse/e2e-gate rather than resolved
+# with './'. A reusable workflow referenced as './.github/workflows/x.yaml'
+# resolves against the ref the caller ran from, so dispatching this from main
+# would call main's e2e.yaml -- which carries none of this work -- and fail in
+# a way that looks like a broken gate rather than a wrong button.
+#
+# To rehearse the *red* -- the half nobody tests, and the only half a gate
+# exists for -- dispatch with a test_command that breaks the store first:
+#
+#   cd "$GITHUB_WORKSPACE/_ghamagento" && ../warden/bin/warden env exec -T php-fpm rm -rf pub/static/frontend && cd - && npx playwright test
+#
+# as one line. hello-magento.spec.ts is written to catch exactly that, so a
+# green run there would mean the gate is decorative. Check that the report
+# artifact uploaded and that the failure reads clearly to someone who did not
+# write the spec.
+
+on:
+  workflow_dispatch:
+    inputs:
+      magento_version:
+        description: "The package to install"
+        type: string
+        default: "mage-os/project-community-edition:4.0.0"
+      magento_repository:
+        description: "The composer repository to install from. Point at preview-repo.mage-os.org to rehearse a candidate."
+        type: string
+        default: "https://repo.mage-os.org/"
+      php_version:
+        description: "PHP version"
+        type: string
+        default: "8.4"
+      test_command:
+        description: "How to run the suite, from the suite directory"
+        type: string
+        default: "npx playwright test"
+      suite_ref:
+        description: "The ref to take the test suite from. main does not have one."
+        type: string
+        default: "rehearse/e2e-gate"
+
+# Standing up the whole stack costs a runner for several minutes; a superseded
+# dispatch is not worth paying for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    # Pinned, not './' -- see the note above about which ref a relative
+    # reusable-workflow reference resolves against.
+    uses: marcelmtz/github-actions/.github/workflows/e2e.yaml@rehearse/e2e-gate
+    with:
+      magento_version: ${{ inputs.magento_version }}
+      magento_repository: ${{ inputs.magento_repository }}
+      php_version: ${{ inputs.php_version }}
+      test_command: ${{ inputs.test_command }}
+      # The suite comes from this fork, at whichever ref was asked for. The
+      # input's own default is mage-os/github-actions@main, and a rehearsal
+      # that runs the specs on main says nothing about the ones under review.
+      suite_repository: ${{ github.repository }}
+      suite_ref: ${{ inputs.suite_ref }}
+      # Named per run, so several rehearsals in a row do not overwrite each
+      # other's evidence.
+      artifact_name: "rehearsal-${{ github.run_id }}"
